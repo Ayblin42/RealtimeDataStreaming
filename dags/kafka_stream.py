@@ -6,8 +6,9 @@ import json
 
 default_args = {
     'owner': 'airscholar',
-    'start_date': datetime(2024, 7, 1, 10, 00)
+    'start_date': datetime(2024, 8, 20, 10, 00)
 }
+
 
 def get_data():
     import requests
@@ -18,6 +19,7 @@ def get_data():
     # print(json.dumps(res, indent=3))
 
     return res
+
 
 def format_data(res):
     data = {}
@@ -38,23 +40,34 @@ def format_data(res):
 
     return data
 
+
 def stream_data():
     from kafka import KafkaProducer
     import time
-    
-    res = get_data()
-    res = format_data(res)
-    print(json.dumps(res, indent=3))
-    producer = KafkaProducer(bootstrap_servers=['localhost:9092'], max_block_ms=5000)
-    producer.send('users_created', json.dumps(res).encode('utf-8'))
+    import logging
 
-# with DAG('user_automation',
-#          default_args=default_args,
-#          schedule_interval='@daily',
-#          catchup=False) as dag:
+    producer = KafkaProducer(bootstrap_servers=['broker:29092'], max_block_ms=5000)
+    curr_time = time.time()
 
-#     streaming_task = PythonOperator(
-#         task_id='stream_data_from_api',
-#         python_callable=stream_data
-#     )
-stream_data()
+    while True:
+        if time.time() > curr_time + 60: #1 minute
+            break
+        try:
+            res = get_data()
+            res = format_data(res)
+
+            producer.send('users_created', json.dumps(res).encode('utf-8'))
+        except Exception as e:
+            logging.error(f'An error occured: {e}')
+            continue
+
+
+with DAG('user_automation',
+         default_args=default_args,
+         schedule_interval='@daily',
+         catchup=False) as dag:
+
+    streaming_task = PythonOperator(
+        task_id='stream_data_from_api',
+        python_callable=stream_data
+    )
